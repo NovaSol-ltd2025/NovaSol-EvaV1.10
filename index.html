@@ -506,6 +506,13 @@
         </div>
       </div>
       <div class="field">
+        <label>ราคาที่ประมูลได้ (บาท) <span class="req">*</span></label>
+        <div class="input-prefix">
+          <span>฿</span>
+          <input type="number" id="bidPrice" placeholder="เช่น 720000" min="0" onchange="recalc()">
+        </div>
+      </div>
+      <div class="field">
         <label>ช่วงระยะเวลาสัญญา (เดือน) <span class="req">*</span></label>
         <div class="input-suffix">
           <span>เดือน</span>
@@ -608,6 +615,43 @@
     <div class="result-card" id="rPctCard">
       <div class="rc-label">ส่วนต่าง (%)</div>
       <div class="rc-value" id="rPct">—</div>
+    </div>
+  </div>
+
+  <div class="card" id="taxCard">
+    <div class="card-title"><span class="icon">🧮</span>การหักเงิน ณ จ่ายราคาประมูล (หัก ณ ที่จ่าย 1% + นำส่งสรรพากร 7%)</div>
+    <div class="result-grid" style="margin-bottom:0">
+      <div class="result-card info">
+        <div class="rc-label">ราคาที่ประมูลได้</div>
+        <div class="rc-value" id="rBidPrice">—</div>
+      </div>
+      <div class="result-card warn">
+        <div class="rc-label">หัก ณ ที่จ่าย 1%</div>
+        <div class="rc-value" id="rWithholding">—</div>
+      </div>
+      <div class="result-card warn">
+        <div class="rc-label">นำส่งสรรพากร 7%</div>
+        <div class="rc-value" id="rVat">—</div>
+      </div>
+      <div class="result-card good">
+        <div class="rc-label">ยอดรับสุทธิ</div>
+        <div class="rc-value" id="rNetReceived">—</div>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="result-grid" style="margin-bottom:0">
+      <div class="result-card info">
+        <div class="rc-label">ต้นทุนรวมทั้งโครงการ</div>
+        <div class="rc-value" id="rTotalCost2">—</div>
+      </div>
+      <div class="result-card" id="rTrueDiffCard">
+        <div class="rc-label">กำไร/ขาดทุนจริง (ยอดรับสุทธิ − ต้นทุน)</div>
+        <div class="rc-value" id="rTrueDiff">—</div>
+      </div>
+      <div class="result-card" id="rTrueDiffPctCard">
+        <div class="rc-label">กำไร/ขาดทุนจริง (%)</div>
+        <div class="rc-value" id="rTrueDiffPct">—</div>
+      </div>
     </div>
   </div>
 
@@ -910,7 +954,7 @@
    CONFIG — ใส่ Web App URL ของ Apps Script (ลงท้ายด้วย /exec)
 ══════════════════════════════════════════════════ */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbzWOW05VC5lRF65zLp0RsoWSlXJhlXhL00lmL5-fh2BNwWffpIIpNYQy1HvEXPn6Ug/exec', // <-- แก้ตรงนี้หลัง Deploy Web App
+  API_URL: 'https://script.google.com/macros/s/AKfycbxZnrqWvehNQ6ugV5WH9RIY9qwQZ8R3shtIQdvTpDInBSo_YDsou7Ug9hj7Mm4KsiE/exec', // <-- แก้ตรงนี้หลัง Deploy Web App
 };
 
 /* ══════════════════════════════════════════════════
@@ -1449,6 +1493,29 @@ function recalc() {
   else if (diff===0){ dCard.classList.add('warn'); pCard.classList.add('warn'); }
   else              { dCard.classList.add('bad');  pCard.classList.add('bad'); }
 
+  /* ── หักภาษี ณ ที่จ่าย 1% + นำส่งสรรพากร 7% จากราคาที่ "ประมูลได้" ── */
+  const bidPrice    = parseFloat(document.getElementById('bidPrice')?.value)||0;
+  const withholding = bidPrice * 0.01;
+  const vat         = bidPrice * 0.07;
+  const netReceived = bidPrice - withholding - vat;
+  const trueDiff    = netReceived - totalCost;
+  const trueDiffPct = bidPrice>0 ? (trueDiff/bidPrice*100) : 0;
+
+  document.getElementById('rBidPrice').textContent    = fmt(bidPrice);
+  document.getElementById('rWithholding').textContent = fmt(withholding);
+  document.getElementById('rVat').textContent          = fmt(vat);
+  document.getElementById('rNetReceived').textContent  = fmt(netReceived);
+  document.getElementById('rTotalCost2').textContent   = fmt(totalCost);
+  document.getElementById('rTrueDiff').textContent     = (trueDiff>=0?'+':'')+fmt(trueDiff);
+  document.getElementById('rTrueDiffPct').textContent  = (trueDiff>=0?'+':'')+trueDiffPct.toFixed(2)+'%';
+
+  const tdCard = document.getElementById('rTrueDiffCard');
+  const tpCard = document.getElementById('rTrueDiffPctCard');
+  ['good','warn','bad'].forEach(c=>{tdCard.classList.remove(c);tpCard.classList.remove(c);});
+  if (trueDiff>0)        { tdCard.classList.add('good'); tpCard.classList.add('good'); }
+  else if (trueDiff===0) { tdCard.classList.add('warn'); tpCard.classList.add('warn'); }
+  else                   { tdCard.classList.add('bad');  tpCard.classList.add('bad'); }
+
   if (budget>0 && totalCost>0) {
     const ratio = totalCost/budget*100;
     const fill  = document.getElementById('progressFill');
@@ -1512,6 +1579,7 @@ function setCalcStatus(totalCost,budget,diff,pct,months,costPerMonth,..._) {
 function collectData() {
   const months   = parseFloat(document.getElementById('contractMonths')?.value)||0;
   const budget   = parseFloat(document.getElementById('budgetPrice')?.value)||0;
+  const bidPrice = parseFloat(document.getElementById('bidPrice')?.value)||0;
   const supW     = (parseFloat(document.getElementById('supervisorWage')?.value)||0)
                  * (parseFloat(document.getElementById('supervisorCount')?.value)||0);
   const wrkW     = (parseFloat(document.getElementById('workerWage')?.value)||0)
@@ -1531,10 +1599,19 @@ function collectData() {
   const totalCost    = costPerMonth*months;
   const diff         = budget-totalCost;
   const pct          = budget>0?(diff/budget*100):0;
+
+  // หักภาษี ณ ที่จ่าย 1% + นำส่งสรรพากร 7% จากราคาที่ประมูลได้
+  const withholding  = bidPrice*0.01;
+  const vat          = bidPrice*0.07;
+  const netReceived  = bidPrice - withholding - vat;
+  const trueDiff     = netReceived - totalCost;
+  const trueDiffPct  = bidPrice>0 ? (trueDiff/bidPrice*100) : 0;
+
   return {
     projectName:     document.getElementById('projectName')?.value||'',
     siteName:        document.getElementById('siteName')?.value||'',
     budgetPrice:     budget,
+    bidPrice,
     contractMonths:  months,
     items:           JSON.stringify(items),
     supervisorWage:  parseFloat(document.getElementById('supervisorWage')?.value)||0,
@@ -1549,6 +1626,11 @@ function collectData() {
     totalCost,
     diff,
     diffPct:         pct,
+    withholding,
+    vat,
+    netReceived,
+    trueDiff,
+    trueDiffPct,
     savedAt:         new Date().toLocaleString('th-TH'),
     rowIndex:        (currentRowIndex && parseInt(currentRowIndex) > 1) ? parseInt(currentRowIndex) : 0,
   };
@@ -1926,22 +2008,23 @@ function renderTable(rows) {
   }
   let html = `<div style="overflow-x:auto"><table class="hist-table">
     <thead><tr>
-      <th>#</th><th>โครงการ</th><th>สถานที่</th><th>ราคากลาง</th>
-      <th>ต้นทุนรวม</th><th>ส่วนต่าง</th><th>%</th><th>วันที่บันทึก</th><th></th>
+      <th>#</th><th>โครงการ</th><th>สถานที่</th><th>ราคากลาง</th><th>ราคาประมูล</th>
+      <th>ต้นทุนรวม</th><th>ยอดรับสุทธิ</th><th>กำไร/ขาดทุนจริง</th><th>วันที่บันทึก</th><th></th>
     </tr></thead><tbody>`;
   rows.forEach((r,i) => {
-    const pct = parseFloat(r.diffPct||0);
-    const cls  = pct>5?'profit':pct>0?'warn':'loss';
-    const pill = pct>0?'pill-green':'pill-red';
-    const sign = pct>=0?'+':'';
+    const tpct = parseFloat(r.trueDiffPct||0);
+    const cls  = tpct>5?'profit':tpct>0?'warn':'loss';
+    const pill = tpct>0?'pill-green':'pill-red';
+    const sign = tpct>=0?'+':'';
     html += `<tr>
       <td style="color:var(--text-muted);font-size:13px">${i+1}</td>
       <td><strong>${escapeHtml(r.projectName)||'—'}</strong></td>
       <td style="color:var(--text-soft)">${escapeHtml(r.siteName)||'—'}</td>
       <td>${fmtN(r.budgetPrice)}</td>
+      <td>${fmtN(r.bidPrice)}</td>
       <td>${fmtN(r.totalCost)}</td>
-      <td class="${cls}">${sign}${fmtN(r.diff)}</td>
-      <td><span class="pill ${pill}">${sign}${pct.toFixed(1)}%</span></td>
+      <td>${fmtN(r.netReceived)}</td>
+      <td class="${cls}">${sign}${fmtN(r.trueDiff)} <span class="pill ${pill}">${sign}${tpct.toFixed(1)}%</span></td>
       <td style="color:var(--text-muted);font-size:12px">${r.savedAt||'—'}</td>
       <td><button class="btn-ghost btn-sm" onclick="viewRecord(${parseInt(r.rowIndex)})">ดู</button></td>
     </tr>`;
@@ -1968,6 +2051,8 @@ function viewRecord(rowIndex) {
   currentRowIndex = id;
   const pct  = parseFloat(rec.diffPct||0);
   const sign = pct>=0?'+':'';
+  const tpct  = parseFloat(rec.trueDiffPct||0);
+  const tsign = tpct>=0?'+':'';
   let itemsHtml = '';
   try {
     JSON.parse(rec.items||'[]').forEach(it => {
@@ -1986,11 +2071,18 @@ function viewRecord(rowIndex) {
     ${itemsHtml?`<table class="hist-table" style="margin-bottom:14px">
       <thead><tr><th>รายการ</th><th>ราคา/หน่วย</th><th>ปริมาณ</th><th>อุปกรณ์</th><th>รวม/เดือน</th></tr></thead>
       <tbody>${itemsHtml}</tbody></table>`:''}
-    <div class="grid-2">
+    <div class="grid-2" style="margin-bottom:14px">
       <div class="result-card info"><div class="rc-label">ราคากลาง</div><div class="rc-value" style="font-size:18px">${fmtN(rec.budgetPrice)}</div></div>
       <div class="result-card info"><div class="rc-label">ต้นทุนรวม</div><div class="rc-value" style="font-size:18px">${fmtN(rec.totalCost)}</div></div>
       <div class="result-card ${pct>0?'good':'bad'}"><div class="rc-label">ส่วนต่าง (บาท)</div><div class="rc-value" style="font-size:18px">${sign}${fmtN(rec.diff)}</div></div>
       <div class="result-card ${pct>0?'good':'bad'}"><div class="rc-label">ส่วนต่าง (%)</div><div class="rc-value" style="font-size:18px">${sign}${pct.toFixed(2)}%</div></div>
+    </div>
+    <div class="card-title" style="margin-bottom:10px">🧮 การหักเงิน ณ จ่ายราคาประมูล</div>
+    <div class="grid-2">
+      <div class="result-card info"><div class="rc-label">ราคาที่ประมูลได้</div><div class="rc-value" style="font-size:18px">${fmtN(rec.bidPrice)}</div></div>
+      <div class="result-card warn"><div class="rc-label">หัก ณ ที่จ่าย 1% + สรรพากร 7%</div><div class="rc-value" style="font-size:18px">${fmtN((parseFloat(rec.withholding)||0)+(parseFloat(rec.vat)||0))}</div></div>
+      <div class="result-card good"><div class="rc-label">ยอดรับสุทธิ</div><div class="rc-value" style="font-size:18px">${fmtN(rec.netReceived)}</div></div>
+      <div class="result-card ${tpct>0?'good':'bad'}"><div class="rc-label">กำไร/ขาดทุนจริง</div><div class="rc-value" style="font-size:18px">${tsign}${fmtN(rec.trueDiff)} (${tsign}${tpct.toFixed(2)}%)</div></div>
     </div>
     <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">บันทึกเมื่อ: ${rec.savedAt||'—'} | Sheet row: ${rec.rowIndex}</p>
   `;
@@ -2006,6 +2098,7 @@ function loadToEdit() {
   document.getElementById('projectName').value     = rec.projectName||'';
   document.getElementById('siteName').value        = rec.siteName||'';
   document.getElementById('budgetPrice').value     = rec.budgetPrice||'';
+  document.getElementById('bidPrice').value        = rec.bidPrice||'';
   document.getElementById('contractMonths').value  = rec.contractMonths||'';
   document.getElementById('supervisorWage').value  = rec.supervisorWage||'';
   document.getElementById('supervisorCount').value = rec.supervisorCount||1;
@@ -2058,7 +2151,7 @@ function setBadge(text, bg, color, border) {
 
 function clearForm() {
   currentRowIndex = null;
-  ['projectName','siteName','budgetPrice','contractMonths',
+  ['projectName','siteName','budgetPrice','bidPrice','contractMonths',
    'supervisorWage','workerWage','acctMonthly','acctYearly'].forEach(id=>{
     const el=document.getElementById(id); if(el)el.value='';
   });
@@ -2068,8 +2161,9 @@ function clearForm() {
   document.getElementById('itemsContainer').innerHTML='';
   itemCount=0;
   document.getElementById('progressCard').style.display='none';
-  ['rTotalCost','rBudget','rDiff','rPct'].forEach(id=>{
-    document.getElementById(id).textContent='—';
+  ['rTotalCost','rBudget','rDiff','rPct','rBidPrice','rWithholding','rVat','rNetReceived','rTotalCost2','rTrueDiff','rTrueDiffPct'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.textContent='—';
   });
   setBadge('NEW','','','');
   document.getElementById('btnSave').innerHTML='<span>💾</span> บันทึกข้อมูล';
